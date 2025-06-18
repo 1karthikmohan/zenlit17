@@ -120,7 +120,7 @@ export const MessagesScreen: React.FC<Props> = ({
       .from('chats')
       .insert([{ user1_id: userId1, user2_id: userId2 }]);
 
-    if (createError) {
+    if (createError || !newChat || newChat.length === 0) {
       console.error('Error creating chat:', createError);
       return null;
     }
