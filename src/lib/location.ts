@@ -289,7 +289,6 @@ export const getNearbyUsers = async (
   }
 }
 
-};
 
 // Check location permission status
 export const checkLocationPermission = async (): Promise<LocationPermissionStatus> => {
