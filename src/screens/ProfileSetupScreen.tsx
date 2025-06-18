@@ -1,13 +1,12 @@
 'use client'
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { CameraIcon, CheckIcon, ChevronLeftIcon, MapPinIcon } from '@heroicons/react/24/outline';
+import { CameraIcon, CheckIcon, ChevronLeftIcon } from '@heroicons/react/24/outline';
 import { supabase } from '../../lib/supabase';
 import { uploadProfileImage } from '../../lib/utils';
 import { completeProfileSetup } from '../lib/auth';
 import { reserveUsername, checkUsernameAvailability } from '../lib/username';
 import { UsernameInput } from '../components/common/UsernameInput';
-import { requestUserLocation, saveUserLocation } from '../lib/location';
 
 interface Props {
   onComplete: (profileData: any) => void;
@@ -21,11 +20,9 @@ const interests = [
 ];
 
 export const ProfileSetupScreen: React.FC<Props> = ({ onComplete, onBack }) => {
-  const [step, setStep] = useState<'basic' | 'photo' | 'interests' | 'location' | 'bio'>('basic');
+  const [step, setStep] = useState<'basic' | 'photo' | 'interests' | 'bio'>('basic');
   const [isLoading, setIsLoading] = useState(false);
   const [isUsernameValid, setIsUsernameValid] = useState(false);
-  const [isRequestingLocation, setIsRequestingLocation] = useState(false);
-  const [locationError, setLocationError] = useState<string | null>(null);
   const [profileData, setProfileData] = useState({
     displayName: '',
     username: '',
@@ -34,10 +31,7 @@ export const ProfileSetupScreen: React.FC<Props> = ({ onComplete, onBack }) => {
     profilePhoto: null as string | null,
     selectedInterests: [] as string[],
     bio: '',
-    location: '',
-    hasLocation: false,
-    latitude: null as number | null,
-    longitude: null as number | null
+    location: ''
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -82,32 +76,6 @@ export const ProfileSetupScreen: React.FC<Props> = ({ onComplete, onBack }) => {
     }
   };
 
-  const handleRequestLocation = async () => {
-    setIsRequestingLocation(true);
-    setLocationError(null);
-
-    try {
-      const result = await requestUserLocation();
-      
-      if (result.success && result.location) {
-        setProfileData(prev => ({
-          ...prev,
-          hasLocation: true,
-          latitude: result.location!.latitude,
-          longitude: result.location!.longitude
-        }));
-        console.log('Location obtained for profile setup');
-      } else {
-        setLocationError(result.error || 'Failed to get location');
-      }
-    } catch (error) {
-      console.error('Location request error:', error);
-      setLocationError('Failed to get location. Please try again.');
-    } finally {
-      setIsRequestingLocation(false);
-    }
-  };
-
   const canProceedFromBasic = () => {
     return profileData.displayName.trim() && 
            profileData.username.trim() &&
@@ -126,8 +94,6 @@ export const ProfileSetupScreen: React.FC<Props> = ({ onComplete, onBack }) => {
     } else if (step === 'photo') {
       setStep('interests');
     } else if (step === 'interests' && canProceedFromInterests()) {
-      setStep('location');
-    } else if (step === 'location') {
       setStep('bio');
     }
   };
@@ -137,10 +103,8 @@ export const ProfileSetupScreen: React.FC<Props> = ({ onComplete, onBack }) => {
       setStep('basic');
     } else if (step === 'interests') {
       setStep('photo');
-    } else if (step === 'location') {
-      setStep('interests');
     } else if (step === 'bio') {
-      setStep('location');
+      setStep('interests');
     } else if (onBack) {
       onBack();
     }
@@ -224,20 +188,6 @@ export const ProfileSetupScreen: React.FC<Props> = ({ onComplete, onBack }) => {
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to complete profile setup');
-      }
-
-      // Save location if user provided it
-      if (profileData.hasLocation && profileData.latitude && profileData.longitude) {
-        console.log('Saving user location...');
-        const locationResult = await saveUserLocation(user.id, {
-          latitude: profileData.latitude,
-          longitude: profileData.longitude,
-          timestamp: Date.now()
-        });
-        
-        if (!locationResult.success) {
-          console.warn('Failed to save location, but continuing with profile setup');
-        }
       }
 
       console.log('Profile setup completed successfully');
@@ -451,83 +401,6 @@ export const ProfileSetupScreen: React.FC<Props> = ({ onComplete, onBack }) => {
     </motion.div>
   );
 
-  const renderLocationStep = () => (
-    <motion.div
-      initial={{ opacity: 0, x: 20 }}
-      animate={{ opacity: 1, x: 0 }}
-      className="space-y-6"
-    >
-      <div className="text-center mb-8">
-        <h2 className="text-2xl font-bold text-white mb-2">Enable Location</h2>
-        <p className="text-gray-400">Help others find you nearby (optional)</p>
-      </div>
-
-      <div className="flex justify-center">
-        <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mb-6">
-          <MapPinIcon className="w-8 h-8 text-white" />
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        <div className="bg-gray-800 rounded-lg p-4 space-y-3">
-          <h3 className="text-sm font-medium text-white">Why enable location?</h3>
-          <ul className="text-sm text-gray-300 space-y-1">
-            <li>• Find people near you</li>
-            <li>• Show up in others' nearby searches</li>
-            <li>• Your exact location is never shared</li>
-            <li>• Only approximate distances are shown</li>
-          </ul>
-        </div>
-
-        {locationError && (
-          <div className="bg-red-900/30 border border-red-700 rounded-lg p-3">
-            <p className="text-red-400 text-sm">{locationError}</p>
-          </div>
-        )}
-
-        {profileData.hasLocation && (
-          <div className="bg-green-900/30 border border-green-700 rounded-lg p-3">
-            <div className="flex items-center gap-2">
-              <CheckIcon className="w-5 h-5 text-green-500" />
-              <span className="text-green-400 text-sm font-medium">
-                Location enabled successfully!
-              </span>
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-3">
-          <button
-            onClick={handleRequestLocation}
-            disabled={isRequestingLocation || profileData.hasLocation}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 active:scale-95 transition-all disabled:bg-gray-600 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {isRequestingLocation ? (
-              <>
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Getting Location...
-              </>
-            ) : profileData.hasLocation ? (
-              <>
-                <CheckIcon className="w-5 h-5" />
-                Location Enabled
-              </>
-            ) : (
-              <>
-                <MapPinIcon className="w-5 h-5" />
-                Enable Location
-              </>
-            )}
-          </button>
-
-          <p className="text-xs text-gray-500 text-center">
-            You can skip this step and enable location later in your profile settings.
-          </p>
-        </div>
-      </div>
-    </motion.div>
-  );
-
   const renderBioStep = () => (
     <motion.div
       initial={{ opacity: 0, x: 20 }}
@@ -594,12 +467,6 @@ export const ProfileSetupScreen: React.FC<Props> = ({ onComplete, onBack }) => {
                 </span>
               )}
             </div>
-            {profileData.hasLocation && (
-              <div className="flex items-center gap-1 mt-2">
-                <MapPinIcon className="w-3 h-3 text-green-500" />
-                <span className="text-xs text-green-400">Location enabled</span>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -607,7 +474,7 @@ export const ProfileSetupScreen: React.FC<Props> = ({ onComplete, onBack }) => {
   );
 
   const getStepProgress = () => {
-    const steps = ['basic', 'photo', 'interests', 'location', 'bio'];
+    const steps = ['basic', 'photo', 'interests', 'bio'];
     return ((steps.indexOf(step) + 1) / steps.length) * 100;
   };
 
@@ -619,8 +486,6 @@ export const ProfileSetupScreen: React.FC<Props> = ({ onComplete, onBack }) => {
         return true; // Photo is optional
       case 'interests':
         return canProceedFromInterests();
-      case 'location':
-        return true; // Location is optional
       case 'bio':
         return profileData.bio.trim().length > 0;
       default:
@@ -651,11 +516,10 @@ export const ProfileSetupScreen: React.FC<Props> = ({ onComplete, onBack }) => {
             </div>
             
             <span className="text-sm text-gray-400 min-w-0">
-              {step === 'basic' && '1/5'}
-              {step === 'photo' && '2/5'}
-              {step === 'interests' && '3/5'}
-              {step === 'location' && '4/5'}
-              {step === 'bio' && '5/5'}
+              {step === 'basic' && '1/4'}
+              {step === 'photo' && '2/4'}
+              {step === 'interests' && '3/4'}
+              {step === 'bio' && '4/4'}
             </span>
           </div>
 
@@ -664,7 +528,6 @@ export const ProfileSetupScreen: React.FC<Props> = ({ onComplete, onBack }) => {
             {step === 'basic' && renderBasicInfo()}
             {step === 'photo' && renderPhotoStep()}
             {step === 'interests' && renderInterestsStep()}
-            {step === 'location' && renderLocationStep()}
             {step === 'bio' && renderBioStep()}
           </div>
 

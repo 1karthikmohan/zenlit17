@@ -189,7 +189,13 @@ export const completeProfileSetup = async (profileData: {
       return { success: false, error: 'User not authenticated' }
     }
 
-    const user = sessionResult.session.user
+    const { data: sessionData, error } = await supabase.auth.getSession();
+    
+    if (error || !sessionData.session) {
+      throw new Error("No active session found");
+    }
+    
+    const user = sessionData.session.user;
 
     // Validate required fields
     if (!profileData.fullName.trim()) {
@@ -207,6 +213,7 @@ export const completeProfileSetup = async (profileData: {
         id: user.id,
         name: profileData.fullName.trim(),
         username: profileData.username.trim().toLowerCase(),
+        email: user.email, // Explicitly add email from authenticated user
         bio: profileData.bio || 'New to Zenlit! 👋',
         date_of_birth: profileData.dateOfBirth,
         gender: profileData.gender,

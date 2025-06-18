@@ -83,7 +83,12 @@ export default function App() {
         return;
       }
 
-      const user = sessionResult.session.user;
+      const { data: sessionData, error } = await supabase.auth.getSession();
+      if (error || !sessionData.session) {
+        // Handle error or no session
+        return;
+      }
+      const user = sessionData.session.user;
       console.log('Valid session found for user:', user.id);
 
       await handleAuthenticatedUser(user);

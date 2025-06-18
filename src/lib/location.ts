@@ -250,11 +250,11 @@ export const hasLocationChangedSignificantly = (
   return distance >= thresholdKm;
 };
 
-// Get nearby users from database
+// Use Supabase RPC to get nearby users using PostGIS query
 export const getNearbyUsers = async (
   currentUserId: string,
   currentLocation: UserLocation,
-  maxDistance: number = 50, // kilometers
+  maxDistance: number = 5, // default 5km
   limit: number = 20
 ): Promise<{
   success: boolean;
@@ -262,68 +262,33 @@ export const getNearbyUsers = async (
   error?: string;
 }> => {
   try {
-    console.log('Fetching nearby users...', { currentLocation, maxDistance, limit });
+    if (!currentLocation || typeof currentLocation.latitude !== 'number' || typeof currentLocation.longitude !== 'number') {
+      return { success: false, error: 'Invalid current location' };
+    }
 
-    // Get all users with location data (excluding current user)
-    const { data: profiles, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .neq('id', currentUserId)
-      .not('latitude', 'is', null)
-      .not('longitude', 'is', null)
-      .not('name', 'is', null)
-      .not('bio', 'is', null)
-      .not('date_of_birth', 'is', null)
-      .not('gender', 'is', null);
+    const { data, error } = await supabase.rpc('get_nearby_users', {
+      user_lat: currentLocation.latitude,
+      user_lng: currentLocation.longitude,
+      radius_km: maxDistance,
+    });
 
     if (error) {
-      console.error('Error fetching users:', error);
-      return {
-        success: false,
-        error: 'Failed to fetch nearby users'
-      };
+      console.error('Error fetching nearby users via RPC:', error);
+      return { success: false, error: error.message || 'Failed to fetch nearby users' };
     }
 
-    if (!profiles || profiles.length === 0) {
-      return {
-        success: true,
-        users: []
-      };
-    }
+    // Filter out the current user if not already excluded by the RPC
+    const filtered = Array.isArray(data)
+      ? data.filter((user) => user.id !== currentUserId).slice(0, limit)
+      : [];
 
-    // Calculate distances and filter by max distance
-    const usersWithDistance = profiles
-      .map(profile => {
-        const distance = calculateDistance(
-          currentLocation.latitude,
-          currentLocation.longitude,
-          profile.latitude,
-          profile.longitude
-        );
-
-        return {
-          ...profile,
-          distance
-        };
-      })
-      .filter(user => user.distance <= maxDistance)
-      .sort((a, b) => a.distance - b.distance) // Sort by distance (closest first)
-      .slice(0, limit); // Limit results
-
-    console.log(`Found ${usersWithDistance.length} nearby users`);
-
-    return {
-      success: true,
-      users: usersWithDistance
-    };
-
+    return { success: true, users: filtered };
   } catch (error) {
-    console.error('Error getting nearby users:', error);
-    return {
-      success: false,
-      error: 'Failed to get nearby users'
-    };
+    console.error('Error in getNearbyUsers:', error);
+    return { success: false, error: 'Failed to get nearby users' };
   }
+}
+
 };
 
 // Check location permission status
