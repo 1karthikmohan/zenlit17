@@ -121,8 +121,12 @@ export const MessagesScreen: React.FC<Props> = ({
       .insert([{ user1_id: userId1, user2_id: userId2 }])
       .select();
 
-    if (createError || !Array.isArray(newChat) || newChat.length === 0) {
+    if (createError) {
       console.error('Error creating chat:', createError);
+      return null;
+    }
+
+    if (!newChat || !Array.isArray(newChat) || newChat.length === 0) {
       return null;
     }
 
