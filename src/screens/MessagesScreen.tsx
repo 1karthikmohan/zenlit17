@@ -118,9 +118,10 @@ export const MessagesScreen: React.FC<Props> = ({
 
     const { data: newChat, error: createError } = await supabase
       .from('chats')
-      .insert([{ user1_id: userId1, user2_id: userId2 }]);
+      .insert([{ user1_id: userId1, user2_id: userId2 }])
+      .select();
 
-    if (createError || !newChat || newChat.length === 0) {
+    if (createError || !Array.isArray(newChat) || newChat.length === 0) {
       console.error('Error creating chat:', createError);
       return null;
     }
