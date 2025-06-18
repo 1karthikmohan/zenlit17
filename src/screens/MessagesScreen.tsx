@@ -20,22 +20,27 @@ export const MessagesScreen: React.FC<Props> = ({
   const [currentUserId, setCurrentUserId] = useState<string>('');
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<User | undefined>(initialSelectedUser || undefined);
-  const [allMessages, setAllMessages] = useState<Message[]>([]);
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isMobile] = useState(window.innerWidth < 768);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    loadUsersAndMessages();
+    loadUsers();
   }, []);
 
   useEffect(() => {
     if (initialSelectedUser) {
       setSelectedUser(initialSelectedUser);
+      if (initialSelectedUser) {
+        handleSelectUser(initialSelectedUser);
+      }
     }
   }, [initialSelectedUser]);
 
-  const loadUsersAndMessages = async () => {
+  // Load users for search
+  const loadUsers = async () => {
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       
@@ -88,17 +93,68 @@ export const MessagesScreen: React.FC<Props> = ({
       }));
 
       setAllUsers(transformedUsers);
-      
-      // Generate messages for all users upfront (this would be replaced with real messages from database)
-      const messagesForAllUsers = transformedUsers.flatMap(user => 
-        generateMessages(currentUser.id, [user])
-      );
-      setAllMessages(messagesForAllUsers);
     } catch (error) {
-      console.error('Error loading users and messages:', error);
+      console.error('Error loading users:', error);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Find or create a chat between two users
+  const findOrCreateChat = async (userId1: string, userId2: string) => {
+    const { data: chat, error } = await supabase
+      .from('chats')
+      .select('*')
+      .or(`(user1_id.eq.${userId1}, user2_id.eq.${userId2}), (user1_id.eq.${userId2}, user2_id.eq.${userId1})`);
+
+    if (error) {
+      console.error('Error finding or creating chat:', error);
+      return null;
+    }
+
+    if (chat.length > 0) {
+      return chat[0];
+    }
+
+    const { data: newChat, error: createError } = await supabase
+      .from('chats')
+      .insert([{ user1_id: userId1, user2_id: userId2 }]);
+
+    if (createError) {
+      console.error('Error creating chat:', createError);
+      return null;
+    }
+
+    return newChat[0];
+  };
+
+  // Fetch messages from Supabase
+  const fetchMessages = async (chatId: string) => {
+    const { data: messages, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('chat_id', chatId);
+
+    if (error) {
+      console.error('Error fetching messages:', error);
+      return [];
+    }
+
+    return messages;
+  };
+
+  // Send message to the DB
+  const sendMessage = async (chatId: string, message: string) => {
+    const { data: newMessage, error } = await supabase
+      .from('messages')
+      .insert([{ chat_id: chatId, message }]);
+
+    if (error) {
+      console.error('Error sending message:', error);
+      return null;
+    }
+
+    return newMessage[0];
   };
 
   // Filter users based on search query
@@ -111,45 +167,14 @@ export const MessagesScreen: React.FC<Props> = ({
     return allUsers.filter(user => {
       // Search by name
       const nameMatch = user.name.toLowerCase().includes(query);
-      
       // Search by username (if available)
       const usernameMatch = user.username?.toLowerCase().includes(query);
-      
       // Search by username without @ symbol
       const usernameWithoutAt = query.startsWith('@') ? query.slice(1) : query;
       const usernameExactMatch = user.username?.toLowerCase().includes(usernameWithoutAt);
-      
       return nameMatch || usernameMatch || usernameExactMatch;
     });
   }, [allUsers, searchQuery]);
-
-  const getMessagesForUser = (userId: string): Message[] => {
-    return allMessages.filter(msg => 
-      msg.senderId === userId || msg.receiverId === userId
-    );
-  };
-
-  const handleSendMessage = (content: string) => {
-    if (!selectedUser) return;
-
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      senderId: currentUserId,
-      receiverId: selectedUser.id,
-      content,
-      timestamp: new Date().toISOString(),
-      read: false
-    };
-
-    setAllMessages(prev => [...prev, newMessage]);
-  };
-
-  const handleSelectUser = (user: User) => {
-    setSelectedUser(user);
-    if (onClearSelectedUser) {
-      onClearSelectedUser();
-    }
-  };
 
   const handleBackToList = () => {
     setSelectedUser(undefined);
@@ -162,7 +187,24 @@ export const MessagesScreen: React.FC<Props> = ({
     setSearchQuery('');
   };
 
-  const selectedUserMessages = selectedUser ? getMessagesForUser(selectedUser.id) : [];
+  const handleSelectUser = async (user: User) => {
+    const chat = await findOrCreateChat(currentUserId, user.id);
+    if (chat) {
+      setCurrentChatId(chat.id);
+      const messages = await fetchMessages(chat.id);
+      setMessages(messages);
+      setSelectedUser(user);
+    }
+  };
+
+  const handleSendMessage = async (message: string) => {
+    if (currentChatId) {
+      const newMessage = await sendMessage(currentChatId, message);
+      if (newMessage) {
+        setMessages(prevMessages => [...prevMessages, newMessage]);
+      }
+    }
+  };
 
   if (isLoading) {
     return (
